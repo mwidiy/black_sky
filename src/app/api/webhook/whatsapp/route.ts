@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { findMerchantByPhone } from "@/lib/db/mock";
+import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
+import { processMerchantMessage } from "@/lib/ai/generate";
 
 // 1. GET Request untuk Verifikasi Meta Webhook
 export async function GET(req: Request) {
@@ -64,7 +67,34 @@ export async function POST(req: Request) {
                     console.log(`💬 Pesan         : ${messageText}`);
                     console.log("==================================\n");
 
-                    // TODO: Di sini nanti pesan dibungkus & dikirim ke AI QuackXel
+                    // TAHAP 2: Filter & Tarik Data
+                    const merchant = await findMerchantByPhone(senderNumber);
+
+                    if (!merchant) {
+                        // Kondisi A: Nomor TIDAK ketemu di Database
+                        console.log(`❌ Akses Ditolak: Nomor ${senderNumber} bukan mitra terdaftar.`);
+                        await sendWhatsAppMessage(
+                            senderNumber,
+                            "Maaf, nomor Anda belum terdaftar sebagai mitra pengelola kantin QuackXel. Silakan daftar di aplikasi."
+                        );
+                    } else {
+                        // Kondisi B: Nomor KETEMU di Database
+                        const contextForAI = {
+                            pesan_masuk: messageText,
+                            id_merchant: merchant.merchant_id,
+                            nama_kantin: merchant.nama_kantin,
+                            status_saat_ini: merchant.status_toko,
+                            info_tambahan: merchant.info_tambahan
+                        };
+
+                        console.log("📦 Paket Data Matang (Context for AI):", contextForAI);
+
+                        // TAHAP 3: Kirim contextForAI ini ke AI QuackXel
+                        const aiResponse = await processMerchantMessage(contextForAI, messageText);
+
+                        // TAHAP 4: Kembalikan balasan ke WhatsApp (Mock)
+                        await sendWhatsAppMessage(senderNumber, aiResponse);
+                    }
                 }
             }
         }
