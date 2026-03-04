@@ -1,29 +1,36 @@
 export async function sendWhatsAppMessage(to: string, message: string) {
-    // Saat ini kita mock dulu menggunakan console.log
-    // Nanti di Tahap pengiriman pesan, ini akan diganti dengan fetch ke Graph API Meta
-    console.log(`\n==================================`);
-    console.log(`📤 MENGIRIM BALASAN WHATSAPP`);
-    console.log(`Kepada : ${to}`);
-    console.log(`Pesan  : ${message}`);
-    console.log(`==================================\n`);
+  // Saat ini kita mock dulu menggunakan console.log
+  // Nanti di Tahap pengiriman pesan, ini akan diganti dengan fetch ke Graph API Meta
+  console.log(`\n==================================`);
+  console.log(`📤 MENGIRIM BALASAN (Via Telegram)`);
+  console.log(`Kepada (Chat ID): ${to}`);
+  console.log(`Pesan  : ${message}`);
+  console.log(`==================================\n`);
 
-    // Contoh implementasi asli nantinya (jangan diuncomment dulu kalau belum siap):
-    /*
-    const token = process.env.WHATSAPP_TOKEN;
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  
-    await fetch(`https://graph.facebook.com/v17.0/${phoneNumberId}/messages`, {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.error("❌ TELEGRAM_BOT_TOKEN belum diset di .env.local!");
+    return;
+  }
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: to,
-        type: "text",
-        text: { body: message },
+        chat_id: to,
+        text: message,
       }),
     });
-    */
+
+    if (response.ok) {
+      console.log("✅ Pesan berhasil dikirim ke Telegram dengan status 200");
+    } else {
+      console.error("❌ Telegram API error:", await response.text());
+    }
+  } catch (error) {
+    console.error("❌ Terjadi kesalahan jaringan saat menghubungi Telegram:", error);
+  }
 }

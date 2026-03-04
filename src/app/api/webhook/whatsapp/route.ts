@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findMerchantByPhone } from "@/lib/db/mock";
+import { findMerchantByPhoneOrChatId } from "@/lib/db/mock";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
 import { processMerchantMessage } from "@/lib/ai/generate";
 
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
                     console.log("==================================\n");
 
                     // TAHAP 2: Filter & Tarik Data
-                    const merchant = await findMerchantByPhone(senderNumber);
+                    const merchant = await findMerchantByPhoneOrChatId(senderNumber);
 
                     if (!merchant) {
                         // Kondisi A: Nomor TIDAK ketemu di Database
@@ -84,7 +84,9 @@ export async function POST(req: Request) {
                             id_merchant: merchant.merchant_id,
                             nama_kantin: merchant.nama_kantin,
                             status_saat_ini: merchant.status_toko,
-                            info_tambahan: merchant.info_tambahan
+                            info_tambahan: merchant.info_tambahan,
+                            menus: merchant.menus,
+                            tables: merchant.tables
                         };
 
                         console.log("📦 Paket Data Matang (Context for AI):", contextForAI);

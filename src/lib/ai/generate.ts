@@ -4,12 +4,25 @@ import { z } from 'zod';
 import { updateMerchantStatus } from '../db/mock';
 
 // Define the shape of our context
+interface MenuItem {
+    id: string;
+    nama: string;
+    harga: number;
+}
+
+interface TableItem {
+    id: string;
+    nomor: string;
+    status: string;
+}
+
 interface MerchantContext {
     id_merchant: string;
     nama_kantin: string;
     status_saat_ini: string;
     info_tambahan: string;
-    pesanan_aktif?: string;
+    menus: MenuItem[];
+    tables: TableItem[];
 }
 
 export async function processMerchantMessage(contextForAI: MerchantContext, messageText: string) {
@@ -17,10 +30,24 @@ export async function processMerchantMessage(contextForAI: MerchantContext, mess
     const systemPromptBase = `Kamu adalah asisten cerdas untuk aplikasi kasir dan self-ordering QuackXel. Tugasmu HANYA membantu pemilik kantin mengelola warung mereka dan sistem Meja Pesan. Bersikaplah ramah, singkat, dan profesional. Jangan pernah menjawab pertanyaan di luar urusan operasional kantin.`;
 
     // Bagian B: Injeksi Konteks Dinamis (Variabel)
+    const menuList = contextForAI.menus && contextForAI.menus.length > 0
+        ? contextForAI.menus.map(m => `- ${m.nama} (Rp ${m.harga.toLocaleString('id-ID')})`).join('\n')
+        : 'Belum ada menu yang didaftarkan.';
+
+    const tableList = contextForAI.tables && contextForAI.tables.length > 0
+        ? contextForAI.tables.map(t => `- ${t.nomor}: ${t.status}`).join('\n')
+        : 'Belum ada meja yang didaftarkan.';
+
     const dynamicContext = `
 Saat ini kamu sedang melayani pemilik kantin bernama: ${contextForAI.nama_kantin}. 
 Status toko saat ini adalah: ${contextForAI.status_saat_ini}. 
-${contextForAI.pesanan_aktif ? `Jumlah pesanan aktif: ${contextForAI.pesanan_aktif}.` : ''}
+
+Daftar Menu yang Tersedia:
+${menuList}
+
+Daftar Meja dan Statusnya:
+${tableList}
+
 Info tambahan mengenai kantin: ${contextForAI.info_tambahan}
 
 PENTING: Jika merchant meminta menutup atau membuka kantin, WAJIB panggil alat (tool) \`ubahStatusKantin\` dan berikan parameter \`status\` dengan nilai "Buka" atau "Tutup". JANGAN biarkan parameter kosong! Setelah memanggil alat, kamu WAJIB membalas pesan ke merchant yang menginformasikan bahwa kantin sudah ditutup/dibuka.

@@ -1,207 +1,235 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-export default function WebhookTester() {
-    const [token, setToken] = useState("quackxel_rahasia_123");
-    const [challenge, setChallenge] = useState("1158201444");
+interface MenuItem {
+    id: string;
+    nama: string;
+    harga: number;
+}
 
-    // State untuk POST Request
-    const [senderNumber, setSenderNumber] = useState("6281234567890");
-    const [messageBody, setMessageBody] = useState("Tolong tutup kantin dong");
+interface TableItem {
+    id: string;
+    nomor: string;
+    status: 'Aktif' | 'Tidak Aktif';
+}
 
-    const [loadingGet, setLoadingGet] = useState(false);
-    const [loadingPost, setLoadingPost] = useState(false);
-    const [result, setResult] = useState<{ type: string; status: number; body: string } | null>(null);
+interface MerchantData {
+    phone: string;
+    merchant_id: string;
+    nama_kantin: string;
+    status_toko: 'Buka' | 'Tutup';
+    info_tambahan: string;
+    menus: MenuItem[];
+    tables: TableItem[];
+    telegram_chat_id?: string;
+}
 
-    const handleTestGet = async () => {
-        setLoadingGet(true);
-        setResult(null);
+export default function DatabaseSimulator() {
+    const [merchants, setMerchants] = useState<MerchantData[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
-        try {
-            const url = `/api/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=${encodeURIComponent(
-                token
-            )}&hub.challenge=${encodeURIComponent(challenge)}`;
-
-            const response = await fetch(url, {
-                method: "GET",
+    // Load data from internal API
+    useEffect(() => {
+        fetch('/api/admin/db')
+            .then(res => res.json())
+            .then(data => {
+                setMerchants(data);
+                setLoading(false);
+            })
+            .catch(err => {
+                console.error(err);
+                setLoading(false);
             });
+    }, []);
 
-            const text = await response.text();
-            setResult({ type: "GET", status: response.status, body: text });
-        } catch (error: any) {
-            setResult({ type: "GET", status: 500, body: error.message || "Failed to fetch" });
-        } finally {
-            setLoadingGet(false);
-        }
-    };
-
-    const handleTestPost = async () => {
-        setLoadingPost(true);
-        setResult(null);
-
+    const handleSave = async () => {
+        setSaving(true);
+        setSaveStatus(null);
         try {
-            const url = `/api/webhook/whatsapp`;
-
-            // Bungkus payload Mentah (Tamu 2) sesuai format Meta
-            const payloadMeta = {
-                "object": "whatsapp_business_account",
-                "entry": [
-                    {
-                        "changes": [
-                            {
-                                "value": {
-                                    "metadata": {
-                                        "display_phone_number": "6281111111",
-                                        "phone_number_id": "123456789"
-                                    },
-                                    "contacts": [{ "profile": { "name": "Pak Budi Kantin" } }],
-                                    "messages": [
-                                        {
-                                            "from": senderNumber,
-                                            "id": `wamid.HBg${Date.now()}`,
-                                            "type": "text",
-                                            "text": {
-                                                "body": messageBody
-                                            }
-                                        }
-                                    ]
-                                }
-                            }
-                        ]
-                    }
-                ]
-            };
-
-            const response = await fetch(url, {
+            const res = await fetch('/api/admin/db', {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payloadMeta)
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(merchants)
             });
-
-            const json = await response.json();
-            // Print JSON ke text
-            setResult({ type: "POST", status: response.status, body: JSON.stringify(json, null, 2) });
-        } catch (error: any) {
-            setResult({ type: "POST", status: 500, body: error.message || "Failed to fetch POST" });
+            if (res.ok) {
+                setSaveStatus("✅ Berhasil disimpan ke Web Memory!");
+                setTimeout(() => setSaveStatus(null), 3000);
+            } else {
+                setSaveStatus("❌ Gagal menyimpan data.");
+            }
+        } catch (error) {
+            setSaveStatus("❌ Error jaringan.");
         } finally {
-            setLoadingPost(false);
+            setSaving(false);
         }
     };
+
+    const updateMerchantField = (index: number, field: keyof MerchantData, value: any) => {
+        const newData = [...merchants];
+        newData[index] = { ...newData[index], [field]: value };
+        setMerchants(newData);
+    };
+
+    const addMenu = (merchantIndex: number) => {
+        const newData = [...merchants];
+        newData[merchantIndex].menus.push({
+            id: `menu_${Date.now()}`,
+            nama: "Menu Baru",
+            harga: 10000
+        });
+        setMerchants(newData);
+    };
+
+    const updateMenu = (mIndex: number, menuIndex: number, field: keyof MenuItem, value: any) => {
+        const newData = [...merchants];
+        newData[mIndex].menus[menuIndex] = { ...newData[mIndex].menus[menuIndex], [field]: value };
+        setMerchants(newData);
+    };
+
+    const deleteMenu = (mIndex: number, menuIndex: number) => {
+        const newData = [...merchants];
+        newData[mIndex].menus.splice(menuIndex, 1);
+        setMerchants(newData);
+    };
+
+    const addTable = (merchantIndex: number) => {
+        const newData = [...merchants];
+        newData[merchantIndex].tables.push({
+            id: `tbl_${Date.now()}`,
+            nomor: `Meja ${newData[merchantIndex].tables.length + 1}`,
+            status: "Aktif"
+        });
+        setMerchants(newData);
+    };
+
+    const updateTable = (mIndex: number, tableIndex: number, field: keyof TableItem, value: any) => {
+        const newData = [...merchants];
+        newData[mIndex].tables[tableIndex] = { ...newData[mIndex].tables[tableIndex], [field]: value };
+        setMerchants(newData);
+    };
+
+    const deleteTable = (mIndex: number, tableIndex: number) => {
+        const newData = [...merchants];
+        newData[mIndex].tables.splice(tableIndex, 1);
+        setMerchants(newData);
+    };
+
+    if (loading) return <div style={styles.container}>Loading Database...</div>;
 
     return (
         <main style={styles.container}>
             <header style={styles.header}>
-                <h1 style={styles.title}>QuackXel Webhook Tester</h1>
-                <p style={styles.subtitle}>Simulator API WhatsApp Meta</p>
+                <h1 style={styles.title}>QuackXel DB Simulator</h1>
+                <p style={styles.subtitle}>Dashboard Kontrol Memori Sementara</p>
+                <div style={{ marginTop: '1rem' }}>
+                    <button onClick={handleSave} style={styles.btnPrimary} disabled={saving}>
+                        {saving ? "Menyimpan..." : "💾 Simpan Perubahan ke DB"}
+                    </button>
+                    {saveStatus && <span style={{ marginLeft: '1rem', fontWeight: 'bold' }}>{saveStatus}</span>}
+                </div>
             </header>
 
             <div style={styles.grid}>
-                {/* Kolom 1: Simulasi GET */}
-                <section style={styles.card}>
-                    <h2 style={styles.cardTitle}>Tamu 1: Meta Verification (GET)</h2>
-                    <p style={styles.description}>
-                        Mensimulasikan saat awal Meta mengetuk server kamu pakai Token Rahasia.
-                    </p>
+                {merchants.map((merchant, mIndex) => (
+                    <section key={merchant.merchant_id} style={styles.card}>
+                        <div style={styles.cardHeader}>
+                            <h2 style={{ margin: 0, color: "#2b6cb0" }}>{merchant.nama_kantin}</h2>
+                            <select
+                                value={merchant.status_toko}
+                                onChange={(e) => updateMerchantField(mIndex, 'status_toko', e.target.value)}
+                                style={{
+                                    ...styles.badge,
+                                    backgroundColor: merchant.status_toko === 'Buka' ? '#c6f6d5' : '#fed7d7',
+                                    color: merchant.status_toko === 'Buka' ? '#22543d' : '#822727'
+                                }}
+                            >
+                                <option value="Buka">Buka</option>
+                                <option value="Tutup">Tutup</option>
+                            </select>
+                        </div>
 
-                    <div style={styles.formGroup}>
-                        <label style={styles.label}>Verify Token</label>
-                        <input
-                            type="text"
-                            value={token}
-                            onChange={(e) => setToken(e.target.value)}
-                            style={styles.input}
-                        />
-                    </div>
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>Nomor HP Terdaftar (Sesuai Telegram)</label>
+                            <input
+                                value={merchant.phone}
+                                onChange={(e) => updateMerchantField(mIndex, 'phone', e.target.value)}
+                                style={styles.input}
+                            />
+                        </div>
 
-                    <div style={styles.formGroup}>
-                        <label style={styles.label}>Challenge</label>
-                        <input
-                            type="text"
-                            value={challenge}
-                            onChange={(e) => setChallenge(e.target.value)}
-                            style={styles.input}
-                        />
-                    </div>
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>Telegram Chat ID (Login)</label>
+                            <input
+                                value={merchant.telegram_chat_id || 'Belum Login (Perlu Verifikasi)'}
+                                readOnly
+                                style={{ ...styles.input, backgroundColor: '#edf2f7', color: '#718096' }}
+                            />
+                        </div>
 
-                    <button
-                        onClick={handleTestGet}
-                        disabled={loadingGet}
-                        style={{
-                            ...styles.button,
-                            opacity: loadingGet ? 0.7 : 1,
-                            backgroundColor: "#3182ce"
-                        }}
-                    >
-                        {loadingGet ? "Loading..." : "Simulate GET Request"}
-                    </button>
-                </section>
+                        <div style={styles.formGroup}>
+                            <label style={styles.label}>Info Tambahan</label>
+                            <input
+                                value={merchant.info_tambahan}
+                                onChange={(e) => updateMerchantField(mIndex, 'info_tambahan', e.target.value)}
+                                style={styles.input}
+                            />
+                        </div>
 
-                {/* Kolom 2: Simulasi POST */}
-                <section style={styles.card}>
-                    <h2 style={styles.cardTitle}>Tamu 2: Pesan WA Masuk (POST)</h2>
-                    <p style={styles.description}>
-                        Mensimulasikan pesan yang dilempar dari aplikasi WA client ke server kamu.
-                    </p>
+                        {/* MENU SECTION */}
+                        <div style={styles.sectionDivider}>
+                            <h3 style={styles.sectionTitle}>Daftar Menu</h3>
+                            <button onClick={() => addMenu(mIndex)} style={styles.btnSmall}>+ Tambah Menu</button>
+                        </div>
+                        <div style={styles.itemsList}>
+                            {merchant.menus.map((menu, menuIndex) => (
+                                <div key={menu.id} style={styles.itemRow}>
+                                    <input
+                                        value={menu.nama}
+                                        onChange={(e) => updateMenu(mIndex, menuIndex, 'nama', e.target.value)}
+                                        style={{ ...styles.inputList, flex: 2 }}
+                                    />
+                                    <input
+                                        type="number"
+                                        value={menu.harga}
+                                        onChange={(e) => updateMenu(mIndex, menuIndex, 'harga', parseInt(e.target.value) || 0)}
+                                        style={{ ...styles.inputList, flex: 1 }}
+                                    />
+                                    <button onClick={() => deleteMenu(mIndex, menuIndex)} style={styles.btnDanger}>X</button>
+                                </div>
+                            ))}
+                        </div>
 
-                    <div style={styles.formGroup}>
-                        <label style={styles.label}>Nomor Pengirim (from)</label>
-                        <input
-                            type="text"
-                            value={senderNumber}
-                            onChange={(e) => setSenderNumber(e.target.value)}
-                            style={styles.input}
-                        />
-                    </div>
-
-                    <div style={styles.formGroup}>
-                        <label style={styles.label}>Isi Teks Pesan (text.body)</label>
-                        <input
-                            type="text"
-                            value={messageBody}
-                            onChange={(e) => setMessageBody(e.target.value)}
-                            style={styles.input}
-                        />
-                    </div>
-
-                    <button
-                        onClick={handleTestPost}
-                        disabled={loadingPost}
-                        style={{
-                            ...styles.button,
-                            opacity: loadingPost ? 0.7 : 1,
-                            backgroundColor: "#38a169"
-                        }}
-                    >
-                        {loadingPost ? "Loading..." : "Simulate POST Payload"}
-                    </button>
-                    <small style={styles.helpText}>Lihat log Terminal Next.js Anda (console.log) setelah di-klik</small>
-                </section>
+                        {/* TABLE SECTION */}
+                        <div style={styles.sectionDivider}>
+                            <h3 style={styles.sectionTitle}>Status Meja</h3>
+                            <button onClick={() => addTable(mIndex)} style={styles.btnSmall}>+ Tambah Meja</button>
+                        </div>
+                        <div style={styles.itemsList}>
+                            {merchant.tables.map((table, tableIndex) => (
+                                <div key={table.id} style={styles.itemRow}>
+                                    <input
+                                        value={table.nomor}
+                                        onChange={(e) => updateTable(mIndex, tableIndex, 'nomor', e.target.value)}
+                                        style={{ ...styles.inputList, flex: 1 }}
+                                    />
+                                    <select
+                                        value={table.status}
+                                        onChange={(e) => updateTable(mIndex, tableIndex, 'status', e.target.value)}
+                                        style={{ ...styles.inputList, flex: 1 }}
+                                    >
+                                        <option value="Aktif">Aktif</option>
+                                        <option value="Tidak Aktif">Tidak Aktif</option>
+                                    </select>
+                                    <button onClick={() => deleteTable(mIndex, tableIndex)} style={styles.btnDanger}>X</button>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                ))}
             </div>
-
-            {result && (
-                <div
-                    style={{
-                        ...styles.resultBox,
-                        backgroundColor: result.status === 200 ? "#e6fffa" : "#fff5f5",
-                        borderColor: result.status === 200 ? "#38b2ac" : "#fc8181",
-                    }}
-                >
-                    <h3
-                        style={{
-                            ...styles.resultTitle,
-                            color: result.status === 200 ? "#285e61" : "#9b2c2c",
-                        }}
-                    >
-                        [{result.type}] Response Code: {result.status}
-                    </h3>
-                    <pre style={styles.preCode}>
-                        {result.body || "<Empty Response>"}
-                    </pre>
-                </div>
-            )}
         </main>
     );
 }
@@ -231,84 +259,109 @@ const styles: { [key: string]: React.CSSProperties } = {
     },
     grid: {
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+        gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
         gap: "2rem",
-        maxWidth: "1000px",
+        maxWidth: "1200px",
         margin: "0 auto",
     },
     card: {
         backgroundColor: "#ffffff",
         borderRadius: "12px",
         boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-        padding: "2rem",
+        padding: "1.5rem",
+        borderTop: "5px solid #3182ce"
     },
-    cardTitle: {
-        fontSize: "1.25rem",
-        fontWeight: "600",
-        marginTop: 0,
-        marginBottom: "0.5rem",
+    cardHeader: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "1rem",
+        paddingBottom: "1rem",
+        borderBottom: "1px solid #e2e8f0"
     },
-    description: {
-        color: "#718096",
-        marginBottom: "1.5rem",
-        lineHeight: 1.5,
-        fontSize: "0.9rem",
+    badge: {
+        padding: "0.25rem 0.75rem",
+        borderRadius: "9999px",
+        fontWeight: "bold",
+        border: "none",
+        outline: "none",
+        cursor: "pointer"
     },
     formGroup: {
-        marginBottom: "1.5rem",
+        marginBottom: "1rem",
     },
     label: {
         display: "block",
         fontWeight: "600",
-        marginBottom: "0.5rem",
+        marginBottom: "0.25rem",
         color: "#4a5568",
+        fontSize: "0.875rem"
     },
     input: {
         width: "100%",
-        padding: "0.75rem",
+        padding: "0.5rem",
         borderRadius: "6px",
-        border: "1px solid #e2e8f0",
-        fontSize: "1rem",
+        border: "1px solid #cbd5e0",
+        fontSize: "0.9rem",
         boxSizing: "border-box" as const,
-        outline: "none",
     },
-    helpText: {
-        display: "block",
+    inputList: {
+        padding: "0.4rem",
+        borderRadius: "4px",
+        border: "1px solid #cbd5e0",
+        fontSize: "0.85rem",
+    },
+    sectionDivider: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: "1.5rem",
+        color: "#2d3748",
+        backgroundColor: "#edf2f7",
+        padding: "0.5rem",
+        borderRadius: "6px"
+    },
+    sectionTitle: {
+        margin: 0,
+        fontSize: "1rem",
+        fontWeight: "bold"
+    },
+    itemsList: {
         marginTop: "0.5rem",
-        color: "#a0aec0",
-        fontSize: "0.875rem",
-        textAlign: "center" as const
+        display: "flex",
+        flexDirection: "column",
+        gap: "0.5rem"
     },
-    button: {
-        width: "100%",
+    itemRow: {
+        display: "flex",
+        gap: "0.5rem"
+    },
+    btnPrimary: {
+        backgroundColor: "#3182ce",
         color: "white",
         fontWeight: "bold",
-        padding: "0.75rem",
-        borderRadius: "6px",
+        padding: "0.75rem 1.5rem",
+        borderRadius: "8px",
         border: "none",
-        fontSize: "1rem",
-        transition: "background-color 0.2s",
         cursor: "pointer",
+        fontSize: "1rem"
     },
-    resultBox: {
-        marginTop: "2rem",
-        padding: "1rem",
-        borderRadius: "6px",
-        borderWidth: "1px",
-        borderStyle: "solid",
-        maxWidth: "1000px",
-        margin: "2rem auto 0 auto",
-    },
-    resultTitle: {
-        margin: "0 0 0.5rem 0",
-        fontSize: "1.125rem",
-    },
-    preCode: {
-        backgroundColor: "rgba(0,0,0,0.05)",
-        padding: "0.5rem",
+    btnSmall: {
+        backgroundColor: "#48bb78",
+        color: "white",
+        border: "none",
         borderRadius: "4px",
-        margin: 0,
-        overflowX: "auto" as const,
-        fontSize: "0.875rem",
+        padding: "0.25rem 0.5rem",
+        fontSize: "0.8rem",
+        cursor: "pointer"
     },
+    btnDanger: {
+        backgroundColor: "#f56565",
+        color: "white",
+        border: "none",
+        borderRadius: "4px",
+        padding: "0.25rem 0.5rem",
+        cursor: "pointer",
+        fontWeight: "bold"
+    }
 };
