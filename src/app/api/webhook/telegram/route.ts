@@ -103,7 +103,7 @@ export async function POST(req: Request) {
 
                 // Tarik Active Orders (Pending / Processing)
                 const activeOrders = merchant.orders?.filter((o: any) => o.status === 'Pending' || o.status === 'Processing').map((o: any) => ({
-                    id: o.id.toString(),
+                    id: o.id,
                     kode_transaksi: o.transactionCode,
                     pelanggan: o.customerName || 'Anonim',
                     waktu_pesan: o.createdAt,
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
                 // Susun Konteks Super Lengkap
                 const contextForAI = {
                     pesan_masuk: messageText,
-                    id_merchant: merchant.id.toString(),
+                    id_merchant: merchant.id,
                     profil_kantin: {
                         nama: merchant.name,
                         status_saat_ini: merchant.isOpen ? 'Buka' : 'Tutup',
@@ -131,14 +131,14 @@ export async function POST(req: Request) {
                         qris: merchant.qrisImage ? 'Tersedia' : 'Tidak Tersedia'
                     },
                     katalog_menu: merchant.products?.map((p: any) => ({
-                        id: p.id.toString(),
+                        id: p.id,
                         nama: p.name,
                         kategori: p.category?.name || 'Tanpa Kategori',
                         harga: Number(p.price),
                         status: p.isActive ? 'Tersedia' : 'Habis'
                     })) || [],
                     denah_meja: allTables.map(t => ({
-                        id: t.id.toString(),
+                        id: t.id,
                         nomor: t.name,
                         status: t.isActive ? 'Bisa Dipakai' : 'Sedang Penuh/Mati'
                     })),

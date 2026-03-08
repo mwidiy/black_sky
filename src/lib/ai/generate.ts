@@ -1,7 +1,7 @@
 import { generateText, tool } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
-import { updateMerchantStatus } from '../db/prisma';
+import { updateMerchantStatus, selesaikanPesananAI, batalkanPesananAI, tambahMenuKantinAI, ubahHargaMenuAI, ubahStatusMenuAI, hapusMenuAI, crudTableAI } from '../db/prisma';
 import { getNextKeyConfiguration, getTotalKeys, getFallbackModel } from './key-manager';
 
 // Kita buat MerchantContext fleksibel karena sekarang dia menerima JSON Laporan Utuh
@@ -15,8 +15,9 @@ const chatMemories = new Map<string, CoreMessage[]>();
 
 export async function processMerchantMessage(contextForAI: MerchantContext, messageText: string, chatId: string = 'default') {
     // Bagian A: Menulis "System Prompt" (SOP Kaku)
-    const systemPromptBase = `Kamu adalah asisten pengelola tingkat tinggi (Store Manager Omniscient) untuk aplikasi kasir dan self-ordering QuackXel. 
-Tugasmu adalah membantu pemilik kantin memonitor seluruh operasional mereka dari mulai katalog menu, promo, denah meja, laporan pendapatan kasir, hingga pantauan pesanan dapur yang masih antre. Bersikaplah ramah, proaktif, layaknya manajer profesional. JANGAN berhalusinasi data. Gunakan murni data JSON yang diberikan di bawah ini.`;
+    const systemPromptBase = `Kamu adalah Kasir AI & Store Manager untuk aplikasi kantin cerdas bernama QuackXel.
+Tugasmu adalah menjawab SEMUA pertanyaan murni berdasarkan DATA JSON REAL-TIME yang disuntikkan di bawah pesan ini.
+JANGAN PERNAH berkata "saya tidak punya akses real-time" atau "silakan cek aplikasi", karena DATA DI BAWAH INI ADALAH DATA REAL-TIME DARI APLIKASI. Jika data ada di JSON, jawablah dengan percaya diri. Bersikaplah ramah dan asyik layaknya anak muda.`;
 
     // Bagian B: Injeksi Konteks Dinamis (JSON Penuh)
     const dynamicContext = `
@@ -37,12 +38,16 @@ PENTING:
 1. Jika admin bertanya "ada pesanan masuk gak", lihat "dapur_aktif".
 2. Jika admin bertanya "hari ini dapet berapa duit/omzet", lihat "kasir_hari_ini".
 3. Jika admin meminta menutup atau membuka kantin, WAJIB panggil alat (tool) \`ubahStatusKantin\` dengan parameter "Buka" atau "Tutup".
-4. ATURAN CARA BICARA: JANGAN PERNAH menyebut kata-kata teknis komputer di balasanmu (seperti "JSON", "Array", "dapur_aktif", "kasir_hari_ini", "object"). Jawablah dengan bahasa manusia yang luwes dan natural, seolah kamu asisten manusia sungguhan!
+4. Jika admin menyuruh memproses pesanan / menyelesaikan pesanan, panggil \`selesaikanPesanan\`. Jika admin minta membatalkan, panggil \`batalkanPesanan\`.
+5. Jika admin meminta **MENAMBAH** menu baru, panggil \`tambahMenu\`.
+6. Jika admin meminta mengubah **HARGA** menu, panggil \`ubahHargaMenu\`.
+7. Jika admin meminta mengubah ketersediaan (habis/kosong/ada), panggil \`ubahStatusMenu\`.
+8. Jika admin meminta **MENGHAPUS** menu, panggil \`hapusMenu\`.
+9. ATURAN CARA BICARA: JANGAN menyebut kata-kata teknis seperti "JSON", "Array". Jawablah natural.
+10. LARANGAN KERAS: DILARANG KERAS menyuruh user mengecek aplikasi sendiri jika datanya sudah ada di "katalog_menu" atau "dapur_aktif". Kamu HARUS membacakan datanya langsung dari JSON tersebut.
 `;
 
     const fullSystemPrompt = `${systemPromptBase}\n${dynamicContext}`;
-
-    let toolExecutionResult: string | null = null;
 
     try {
         const toolsDef = {
@@ -53,27 +58,95 @@ PENTING:
                 }),
                 // @ts-ignore
                 execute: async (args: any) => {
-                    console.log(`\n⚙️  [TOOL PAYLOAD ASLI DARI AI]:`, JSON.stringify(args));
-
-                    let statusRaw = args?.status || args?.arguments?.status || args?.parameters?.status;
-                    if (!statusRaw && typeof args === 'object') {
-                        const values = Object.values(args);
-                        statusRaw = values.find(v => typeof v === 'string' && (v.toLowerCase() === 'buka' || v.toLowerCase() === 'tutup'));
-                    }
-
-                    const status = (statusRaw === 'Tutup' || statusRaw?.toLowerCase() === 'tutup') ? 'Tutup' : 'Buka';
-
-                    console.log(`\n⚙️  [TOOL DIPANGGIL] AI meminta perubahan status kantin menjadi: ${status}`);
-
-                    const mId = parseInt(contextForAI.id_merchant);
-                    const success = await updateMerchantStatus(mId, status);
-
-                    if (success) {
-                        toolExecutionResult = `Siap laksanakan! Status warung/kantin *${contextForAI.nama_kantin}* sekarang sudah diubah menjadi *${status}*.`;
-                    } else {
-                        toolExecutionResult = `Maaf bos, terjadi kesalahan sistem saat mencoba mengubah status kantin. Coba lagi nanti ya.`;
-                    }
-                    return toolExecutionResult;
+                    const { status } = args;
+                    const statusStr = (status === 'Tutup' || status?.toLowerCase() === 'tutup') ? 'Tutup' : 'Buka';
+                    console.log(`\n⚙️  [TOOL DIPANGGIL] AI meminta perubahan status kantin menjadi: ${statusStr}`);
+                    const success = await updateMerchantStatus(parseInt(contextForAI.id_merchant), statusStr);
+                    return success ? `Berhasil mengubah status kantin menjadi ${statusStr}` : `Gagal mengubah status kantin`;
+                }
+            }),
+            selesaikanPesanan: tool({
+                description: 'Selesaikan pesanan pelanggan berdasarkan nama pelanggannya.',
+                parameters: z.object({
+                    nama_pelanggan: z.string().describe('Nama pelanggan yang pesanannya mau diselesaikan (misal: Budi Santoso)')
+                }),
+                // @ts-ignore
+                execute: async (args: any) => {
+                    const res = await selesaikanPesananAI(parseInt(contextForAI.id_merchant), args.nama_pelanggan);
+                    return res.message;
+                }
+            }),
+            batalkanPesanan: tool({
+                description: 'Batalkan pesanan berdasarkan nama pelanggan dan sebutkan alasannya.',
+                parameters: z.object({
+                    nama_pelanggan: z.string().describe('Nama pelanggan'),
+                    alasan: z.string().describe('Alasan lengkap kenapa dibatalkan')
+                }),
+                // @ts-ignore
+                execute: async (args: any) => {
+                    const res = await batalkanPesananAI(parseInt(contextForAI.id_merchant), args.nama_pelanggan, args.alasan);
+                    return res.message;
+                }
+            }),
+            tambahMenu: tool({
+                description: 'Tambahkan menu baru ke kantin beserta dengan harganya.',
+                parameters: z.object({
+                    nama_menu: z.string().describe('Nama lengkap jualan yang baru (Misal: Es Teh Manis)'),
+                    harga: z.coerce.number().describe('Harga jual dalam bentuk angka bulat')
+                }),
+                // @ts-ignore
+                execute: async (args: any) => {
+                    const res = await tambahMenuKantinAI(parseInt(contextForAI.id_merchant), args.nama_menu, args.harga);
+                    return res.message;
+                }
+            }),
+            ubahHargaMenu: tool({
+                description: 'Ubah harga jual sebuah menu.',
+                parameters: z.object({
+                    nama_menu: z.string().describe('Nama menu yang ingin diubah harganya (Misal: Nasi Goreng)'),
+                    harga_baru: z.coerce.number().describe('Harga baru dalam bentuk angka bulat (Misal: 15000)')
+                }),
+                // @ts-ignore
+                execute: async (args: any) => {
+                    const res = await ubahHargaMenuAI(parseInt(contextForAI.id_merchant), args.nama_menu, args.harga_baru);
+                    return res.message;
+                }
+            }),
+            ubahStatusMenu: tool({
+                description: 'Ubah ketersediaan sebuah menu (apakah sedang habis atau tersedia).',
+                parameters: z.object({
+                    nama_menu: z.string().describe('Nama menu'),
+                    status_ketersediaan: z.string().describe('Ketik persis antara "tersedia" ATAU "habis"')
+                }),
+                // @ts-ignore
+                execute: async (args: any) => {
+                    const res = await ubahStatusMenuAI(parseInt(contextForAI.id_merchant), args.nama_menu, args.status_ketersediaan);
+                    return res.message;
+                }
+            }),
+            hapusMenu: tool({
+                description: 'Hapus sebuah menu permanen dari daftar kantin.',
+                parameters: z.object({
+                    nama_menu: z.string().describe('Nama menu yang mau dihapus/dicabut')
+                }),
+                // @ts-ignore
+                execute: async (args: any) => {
+                    const res = await hapusMenuAI(parseInt(contextForAI.id_merchant), args.nama_menu);
+                    return res.message;
+                }
+            }),
+            crudTable: tool({
+                description: 'Ubah atau hapus meja/lokasi fisik.',
+                parameters: z.object({
+                    action: z.enum(['create', 'update', 'delete']),
+                    tableId: z.coerce.number().optional(),
+                    name: z.string().optional(),
+                    isActive: z.boolean().optional()
+                }),
+                // @ts-ignore
+                execute: async (args: any) => {
+                    const res = await crudTableAI(args.action, parseInt(contextForAI.id_merchant), args.tableId, args.name, args.isActive);
+                    return res.message;
                 }
             })
         };
@@ -95,6 +168,9 @@ PENTING:
             try {
                 // Tarik memori yang pernah diomongin oleh chat ID ini (kalo ada)
                 let pastMessages = chatMemories.get(chatId) || [];
+                // Bersihkan memori dari khayalan error sebelumnya
+                pastMessages = pastMessages.filter(m => !m.content.includes('Sistem: undefined') && !m.content.includes('saya tidak dapat menampilkan'));
+
                 const currentMessage: CoreMessage = { role: 'user', content: messageText };
 
                 const response = await generateText({
@@ -102,7 +178,7 @@ PENTING:
                     system: fullSystemPrompt,
                     messages: [...pastMessages, currentMessage],
                     // @ts-ignore
-                    maxSteps: 5,
+                    maxSteps: 1, // Memaksa AI hanya 1 langkah untuk mencegah halusinasi tool-calls loop OpenRouter
                     maxTokens: 1500, // Mencegah AI boros limit untuk free tier OpenRouter
                     tools: toolsDef,
                     onStepFinish({ text, toolCalls, finishReason }) {
@@ -110,9 +186,19 @@ PENTING:
                     }
                 });
 
+                let finalOutputContent = response.text;
+
+                // Mencegah loop OpenRouter: Langsung cetak hasil eksekusi tool jika ada
+                if (response.toolResults && response.toolResults.length > 0) {
+                    const mappedResults = response.toolResults.map((tr: any) => tr.result).join('\n---\n');
+                    finalOutputContent = `✅ Eksekusi Selesai:\n${mappedResults}`;
+                } else if (!finalOutputContent || finalOutputContent.trim() === '') {
+                    finalOutputContent = "Aksi diterima. Sistem sedang memproses perintah Anda (Hanya backend).";
+                }
+
                 // Kalo sukses, simpan percakapan ini ke CACHE MEMORY
                 pastMessages.push(currentMessage);
-                pastMessages.push({ role: 'assistant', content: response.text });
+                pastMessages.push({ role: 'assistant', content: finalOutputContent });
 
                 // Batasi memori max 10 pesan terakhir (5 pasang tanya jawab) agar tidak melebihi konteks API
                 if (pastMessages.length > 10) {
@@ -120,7 +206,7 @@ PENTING:
                 }
                 chatMemories.set(chatId, pastMessages);
 
-                responseText = response.text;
+                responseText = finalOutputContent;
                 break;
 
             } catch (error: any) {
@@ -131,6 +217,7 @@ PENTING:
                     console.log(`🔥 [FALLBACK TERAKHIR] Semua antrean key error. Mengaktifkan GOOGLE_GENERATIVE_AI_API_KEY bawaan!`);
                     try {
                         let pastMessages = chatMemories.get(chatId) || [];
+                        pastMessages = pastMessages.filter(m => !m.content.includes('Sistem: undefined') && !m.content.includes('saya tidak dapat menampilkan'));
                         const currentMessage: CoreMessage = { role: 'user', content: messageText };
 
                         const finalResponse = await generateText({
@@ -138,17 +225,25 @@ PENTING:
                             system: fullSystemPrompt,
                             messages: [...pastMessages, currentMessage],
                             // @ts-ignore
-                            maxSteps: 5,
+                            maxSteps: 1,
                             maxTokens: 1500,
                             tools: toolsDef
                         });
 
+                        let finalFallbackOutput = finalResponse.text;
+                        if (finalResponse.toolResults && finalResponse.toolResults.length > 0) {
+                            const fbMappedResults = finalResponse.toolResults.map((tr: any) => tr.result).join('\n---\n');
+                            finalFallbackOutput = `✅ Eksekusi Selesai:\n${fbMappedResults}`;
+                        } else if (!finalFallbackOutput || finalFallbackOutput.trim() === '') {
+                            finalFallbackOutput = "Aksi diterima. Sistem memproses perintah Anda.";
+                        }
+
                         pastMessages.push(currentMessage);
-                        pastMessages.push({ role: 'assistant', content: finalResponse.text });
+                        pastMessages.push({ role: 'assistant', content: finalFallbackOutput });
                         if (pastMessages.length > 10) pastMessages = pastMessages.slice(pastMessages.length - 10);
                         chatMemories.set(chatId, pastMessages);
 
-                        responseText = finalResponse.text;
+                        responseText = finalFallbackOutput;
                         break;
                     } catch (finalError) {
                         console.error("❌ Error FATAL saat memanggil Google AI Terakhir:", finalError);
@@ -158,10 +253,6 @@ PENTING:
                     console.log(`⚠️ Melanjutkan ke rotasi key berikutnya...`);
                 }
             }
-        }
-
-        if (toolExecutionResult) {
-            return toolExecutionResult;
         }
 
         return responseText || "Tidak ada respon teks atau tool yang dipanggil oleh sistem AI.";

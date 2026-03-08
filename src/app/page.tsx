@@ -25,18 +25,65 @@ export default function AdminDashboard() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [activeTab, setActiveTab] = useState("pesanan");
-
     const [historyFilter, setHistoryFilter] = useState<"hari_ini" | "bulan_ini" | "semua">("hari_ini");
 
+    const [isEditing, setIsEditing] = useState(false);
+    const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+
+    // 1. Initial Fetch Data
     useEffect(() => {
         fetch('/api/admin/db')
             .then(res => res.json())
             .then(data => {
-                if (data && data.length > 0) setStore(data[0]);
+                if (data && data.length > 0) {
+                    setStore(data[0]);
+                    setLastSyncTime(new Date());
+                }
                 setLoading(false);
             })
             .catch(err => { console.error(err); setLoading(false); });
     }, []);
+
+    // 2. Global Event Listener for "Typing/Editing" Detection
+    useEffect(() => {
+        const handleFocus = (e: any) => {
+            if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+                setIsEditing(true);
+            }
+        };
+        const handleBlur = () => {
+            setTimeout(() => {
+                if (!document.activeElement || !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                    setIsEditing(false);
+                }
+            }, 50);
+        };
+
+        document.addEventListener('focusin', handleFocus);
+        document.addEventListener('focusout', handleBlur);
+        return () => {
+            document.removeEventListener('focusin', handleFocus);
+            document.removeEventListener('focusout', handleBlur);
+        };
+    }, []);
+
+    // 3. Auto-Polling 5 Seconds (Safe Sync)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (!isEditing && !saving) {
+                fetch('/api/admin/db')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.length > 0) {
+                            setStore(data[0]);
+                            setLastSyncTime(new Date());
+                        }
+                    })
+                    .catch(err => console.error("Auto-sync error:", err));
+            }
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [isEditing, saving]);
 
     const handleSave = async (silent = false) => {
         if (!store) return;
@@ -403,10 +450,14 @@ export default function AdminDashboard() {
             <header style={styles.header}>
                 <h1 style={styles.title}>QuackXel 3.0 Real-Time Master Control</h1>
                 <p style={styles.subtitle}>Supercharged Central Database Admin Panel</p>
-                <div style={{ marginTop: '1.5rem', marginBottom: '1rem' }}>
+                <div style={{ marginTop: '1.5rem', marginBottom: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                     <button onClick={() => handleSave(false)} style={styles.btnPrimary} disabled={saving}>
                         {saving ? "⏳ Menyinkronkan Graph DB..." : "💾 CLOUD SYNC: SIMPAN SEMUA PERUBAHAN DB"}
                     </button>
+                    <div style={{ fontSize: '0.85rem', color: isEditing ? '#e53e3e' : '#38a169', fontWeight: 'bold' }}>
+                        {isEditing ? "⏸️ Auto-Sync Ditunda (Sedang Mengetik)" : "🟢 Live DB Auto-Sync Aktif"}
+                        {lastSyncTime && <span style={{ color: '#718096', fontWeight: 'normal' }}> - Terakhir ditarik: {lastSyncTime.toLocaleTimeString()}</span>}
+                    </div>
                 </div>
                 {renderTabs()}
             </header>
