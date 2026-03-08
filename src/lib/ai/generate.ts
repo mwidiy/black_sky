@@ -1,7 +1,7 @@
 import { generateText, tool } from 'ai';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
-import { updateMerchantStatus } from '../db/mock';
+import { updateMerchantStatus } from '../db/prisma';
 
 // Define the shape of our context
 interface MenuItem {
@@ -89,7 +89,8 @@ PENTING: Jika merchant meminta menutup atau membuka kantin, WAJIB panggil alat (
                         console.log(`\n⚙️  [TOOL DIPANGGIL] AI meminta perubahan status kantin menjadi: ${status}`);
 
                         // Eksekusi fungsi backend
-                        const success = await updateMerchantStatus(contextForAI.id_merchant, status);
+                        const mId = parseInt(contextForAI.id_merchant);
+                        const success = await updateMerchantStatus(mId, status);
 
                         if (success) {
                             toolExecutionResult = `Siap laksanakan! Status warung/kantin *${contextForAI.nama_kantin}* sekarang sudah diubah menjadi *${status}*.`;

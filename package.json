@@ -17,8 +17,10 @@
   "license": "ISC",
   "dependencies": {
     "@ai-sdk/google": "^3.0.36",
+    "@prisma/client": "^5.11.0",
     "ai": "^6.0.108",
     "next": "^16.1.6",
+    "prisma": "^5.11.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zod": "^4.3.6"

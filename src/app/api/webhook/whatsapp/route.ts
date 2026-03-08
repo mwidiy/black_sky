@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findMerchantByPhoneOrChatId } from "@/lib/db/mock";
+import { findMerchantByPhoneOrChatId } from "@/lib/db/prisma";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/send";
 import { processMerchantMessage } from "@/lib/ai/generate";
 
@@ -79,14 +79,28 @@ export async function POST(req: Request) {
                         );
                     } else {
                         // Kondisi B: Nomor KETEMU di Database
+                        // Merge Locations -> Tables
+                        let allTables: any[] = [];
+                        merchant.locations?.forEach((loc: any) => {
+                            allTables = [...allTables, ...loc.tables];
+                        });
+
                         const contextForAI = {
                             pesan_masuk: messageText,
-                            id_merchant: merchant.merchant_id,
-                            nama_kantin: merchant.nama_kantin,
-                            status_saat_ini: merchant.status_toko,
-                            info_tambahan: merchant.info_tambahan,
-                            menus: merchant.menus,
-                            tables: merchant.tables
+                            id_merchant: merchant.id.toString(),
+                            nama_kantin: merchant.name,
+                            status_saat_ini: merchant.isOpen ? 'Buka' : 'Tutup',
+                            info_tambahan: "(Prisma PostgreSQL Connected)",
+                            menus: merchant.products?.map((p: any) => ({
+                                id: p.id.toString(),
+                                nama: p.name,
+                                harga: p.price
+                            })) || [],
+                            tables: allTables.map((t: any) => ({
+                                id: t.id.toString(),
+                                nomor: t.name,
+                                status: t.isActive ? 'Aktif' : 'Tidak Aktif'
+                            }))
                         };
 
                         console.log("📦 Paket Data Matang (Context for AI):", contextForAI);
