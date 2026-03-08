@@ -97,27 +97,64 @@ export async function POST(req: Request) {
                     allTables = [...allTables, ...loc.tables];
                 });
 
+                // Hitung Revenue (Order Completed Hari Ini)
+                const completedOrders = merchant.orders?.filter((o: any) => o.status === 'Completed') || [];
+                const todayRevenue = completedOrders.reduce((acc: number, o: any) => acc + Number(o.totalAmount), 0);
+
+                // Tarik Active Orders (Pending / Processing)
+                const activeOrders = merchant.orders?.filter((o: any) => o.status === 'Pending' || o.status === 'Processing').map((o: any) => ({
+                    id: o.id.toString(),
+                    kode_transaksi: o.transactionCode,
+                    pelanggan: o.customerName || 'Anonim',
+                    waktu_pesan: o.createdAt,
+                    tipe_pesanan: o.orderType, // Cth: DINE_IN / TAKEAWAY
+                    pembayaran: o.paymentMethod,
+                    meja: o.table?.name || '-',
+                    status: o.status,
+                    catatan_dari_pelanggan: o.note || '-',
+                    total_tagihan: Number(o.totalAmount),
+                    items: o.items.map((i: any) => `${i.quantity}x ${i.product.name}${i.note ? ` (Catatan: ${i.note})` : ''}`).join(", ")
+                })) || [];
+
+                // Kumpulkan Banners
+                const activeBanners = merchant.banners?.filter((b: any) => b.isActive).map((b: any) => b.title) || [];
+
+                // Susun Konteks Super Lengkap
                 const contextForAI = {
                     pesan_masuk: messageText,
                     id_merchant: merchant.id.toString(),
-                    nama_kantin: merchant.name,
-                    status_saat_ini: merchant.isOpen ? 'Buka' : 'Tutup',
-                    info_tambahan: "(Prisma PostgreSQL Connected)",
-                    menus: merchant.products?.map((p: any) => ({
+                    profil_kantin: {
+                        nama: merchant.name,
+                        status_saat_ini: merchant.isOpen ? 'Buka' : 'Tutup',
+                        telepon: merchant.whatsappNumber,
+                        bank: merchant.bankName ? `${merchant.bankName} - ${merchant.bankNumber}` : 'Belum diatur',
+                        qris: merchant.qrisImage ? 'Tersedia' : 'Tidak Tersedia'
+                    },
+                    katalog_menu: merchant.products?.map((p: any) => ({
                         id: p.id.toString(),
                         nama: p.name,
-                        harga: p.price
+                        kategori: p.category?.name || 'Tanpa Kategori',
+                        harga: Number(p.price),
+                        status: p.isActive ? 'Tersedia' : 'Habis'
                     })) || [],
-                    tables: allTables.map(t => ({
+                    denah_meja: allTables.map(t => ({
                         id: t.id.toString(),
                         nomor: t.name,
-                        status: t.isActive ? 'Aktif' : 'Tidak Aktif'
-                    }))
+                        status: t.isActive ? 'Bisa Dipakai' : 'Sedang Penuh/Mati'
+                    })),
+                    promo_aktif: activeBanners,
+                    dapur_aktif: activeOrders,
+                    kasir_hari_ini: {
+                        total_transaksi_selesai: completedOrders.length,
+                        pendapatan_kotor: todayRevenue
+                    },
+                    info_sistem: "(Data Deep Context - Realtime Prisma SQL)"
                 };
 
                 console.log("📦 Paket Data Matang (Context for AI):", contextForAI);
 
-                const aiResponse = await processMerchantMessage(contextForAI, messageText);
+                // Kirim chatId sebagai identifier sesi memori (Tujuannya agar bot ingat riwayat obrolan user tsb)
+                const aiResponse = await processMerchantMessage(contextForAI, messageText, chatId);
 
                 await sendWhatsAppMessage(chatId, aiResponse);
             }

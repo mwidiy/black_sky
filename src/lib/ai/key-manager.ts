@@ -1,27 +1,65 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { google } from '@ai-sdk/google';
+import fs from 'fs';
+import path from 'path';
 
-// 1. Kumpulkan semua key dari .env yang bernama 'api1', 'api2', dst.
-const primaryKeys: string[] = [];
-for (const key in process.env) {
-    if (key.startsWith('api') && process.env[key]) {
-        primaryKeys.push(process.env[key] as string);
+// 1. Kumpulkan semua key dari .env yang bernama 'api1', 'api2', dst. berurutan
+const primaryKeys: { name: string, key: string }[] = [];
+for (let i = 1; i <= 100; i++) {
+    const envVarName = `api${i}`;
+    if (process.env[envVarName]) {
+        primaryKeys.push({
+            name: envVarName,
+            key: process.env[envVarName] as string
+        });
     }
 }
 
-// 2. Global Index Tracker untuk True Round-Robin
-let currentIndex = 0;
+// 2. Setup Persistent State via FileSystem
+const STATE_FILE = path.join(process.cwd(), '.key_state.json');
+
+function getCurrentIndex(): number {
+    try {
+        if (fs.existsSync(STATE_FILE)) {
+            const data = fs.readFileSync(STATE_FILE, 'utf-8');
+            const parsed = JSON.parse(data);
+            if (typeof parsed.currentIndex === 'number') {
+                return parsed.currentIndex;
+            }
+        }
+    } catch (e) {
+        console.error("⚠️ Gagal membaca .key_state.json, menggunakan index 0", e);
+    }
+    return 0;
+}
+
+function saveCurrentIndex(index: number) {
+    try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify({ currentIndex: index }), 'utf-8');
+    } catch (e) {
+        console.error("⚠️ Gagal menyimpan .key_state.json", e);
+    }
+}
 
 export function getNextKeyConfiguration() {
     if (primaryKeys.length === 0) {
         return null;
     }
 
-    const key = primaryKeys[currentIndex];
-    const keyName = `api${currentIndex + 1}`; // Estimasi visual saja
+    let currentIndex = getCurrentIndex();
+
+    // Safety check: jika jumlah key di .env berkurang/dihapus, kembalikan index ke 0
+    if (currentIndex >= primaryKeys.length) {
+        currentIndex = 0;
+    }
+
+    const currentItem = primaryKeys[currentIndex];
+    const keyName = currentItem.name;
+    const key = currentItem.key;
 
     // Majukan index, jika sudah lewat batas balik ke 0 (Loop)
-    currentIndex = (currentIndex + 1) % primaryKeys.length;
+    const nextIndex = (currentIndex + 1) % primaryKeys.length;
+    saveCurrentIndex(nextIndex);
 
     // Tentukan Model Provider (OpenRouter vs Google Native)
     if (key.startsWith('sk-or-')) {

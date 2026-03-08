@@ -24,12 +24,29 @@ export async function findMerchantByPhoneOrChatId(query: string) {
             ]
         },
         include: {
+            categories: true,
+            banners: {
+                where: { isActive: true }
+            },
             products: {
-                where: { isActive: true } // Hanya ambil menu yang aktif
+                where: { isActive: true },
+                include: { category: true } // Tarik kategori dari relasi produk
             },
             locations: {
                 include: {
                     tables: true // Tarik semua meja di semua lokasi
+                }
+            },
+            orders: {
+                take: 100, // Ambil 100 orderan terakhir (sudah cukup mencakup order aktif & uang hari ini)
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    items: {
+                        include: {
+                            product: true
+                        }
+                    },
+                    table: true
                 }
             }
         }
