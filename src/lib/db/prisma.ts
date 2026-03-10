@@ -118,6 +118,7 @@ export async function updateMerchantStatus(merchantId: number, status: 'Buka' | 
 // ==========================================
 
 export async function selesaikanPesananAI(storeId: number, namaPelanggan: string) {
+    if (!namaPelanggan || namaPelanggan.trim() === '') return { success: false, message: 'Nama pelanggan tidak boleh kosong.' };
     try {
         const order = await prisma.order.findFirst({
             where: {
@@ -141,6 +142,8 @@ export async function selesaikanPesananAI(storeId: number, namaPelanggan: string
 }
 
 export async function batalkanPesananAI(storeId: number, namaPelanggan: string, alasan: string) {
+    if (!namaPelanggan || namaPelanggan.trim() === '') return { success: false, message: 'Nama pelanggan tidak boleh kosong.' };
+    if (!alasan || alasan.trim() === '') return { success: false, message: 'Alasan pembatalan harus disertakan.' };
     try {
         const order = await prisma.order.findFirst({
             where: {
@@ -164,6 +167,8 @@ export async function batalkanPesananAI(storeId: number, namaPelanggan: string, 
 }
 
 export async function tambahMenuKantinAI(storeId: number, namaMenu: string, harga: number) {
+    if (!namaMenu || namaMenu.trim() === '') return { success: false, message: 'Nama menu tidak boleh kosong.' };
+    if (isNaN(Number(harga)) || Number(harga) <= 0) return { success: false, message: 'Harga tidak valid.' };
     try {
         // Cari kategori pertama milik toko ini sebagai default
         let category = await prisma.category.findFirst({ where: { storeId }, orderBy: { id: 'asc' } });
@@ -176,7 +181,7 @@ export async function tambahMenuKantinAI(storeId: number, namaMenu: string, harg
         await prisma.product.create({
             data: {
                 name: namaMenu,
-                price: harga,
+                price: Number(harga),
                 isActive: true,
                 categoryId: category.id,
                 storeId,
@@ -191,6 +196,8 @@ export async function tambahMenuKantinAI(storeId: number, namaMenu: string, harg
 }
 
 export async function ubahHargaMenuAI(storeId: number, namaMenu: string, hargaBaru: number) {
+    if (!namaMenu || namaMenu.trim() === '') return { success: false, message: 'Tolong sebutkan nama menu yang spesifik secara lengkap.' };
+    if (isNaN(Number(hargaBaru)) || Number(hargaBaru) <= 0) return { success: false, message: 'Harga baru tidak valid atau tidak disebutkan.' };
     try {
         const product = await prisma.product.findFirst({
             where: { storeId, name: { contains: namaMenu, mode: 'insensitive' } }
@@ -200,7 +207,7 @@ export async function ubahHargaMenuAI(storeId: number, namaMenu: string, hargaBa
 
         await prisma.product.update({
             where: { id: product.id },
-            data: { price: hargaBaru }
+            data: { price: Number(hargaBaru) }
         });
         return { success: true, message: `Harga '${product.name}' berhasil diubah menjadi Rp${hargaBaru}.` };
     } catch (e: any) {
@@ -209,6 +216,8 @@ export async function ubahHargaMenuAI(storeId: number, namaMenu: string, hargaBa
 }
 
 export async function ubahStatusMenuAI(storeId: number, namaMenu: string, statusText: string) {
+    if (!namaMenu || namaMenu.trim() === '') return { success: false, message: 'Tolong sebutkan nama menu yang spesifik secara lengkap.' };
+    if (!statusText || statusText.trim() === '') return { success: false, message: 'Status tidak boleh kosong.' };
     try {
         const product = await prisma.product.findFirst({
             where: { storeId, name: { contains: namaMenu, mode: 'insensitive' } }
@@ -230,6 +239,7 @@ export async function ubahStatusMenuAI(storeId: number, namaMenu: string, status
 }
 
 export async function hapusMenuAI(storeId: number, namaMenu: string) {
+    if (!namaMenu || namaMenu.trim() === '') return { success: false, message: 'Tolong sebutkan nama menu yang ingin dihapus.' };
     try {
         const product = await prisma.product.findFirst({
             where: { storeId, name: { contains: namaMenu, mode: 'insensitive' } }

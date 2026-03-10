@@ -154,17 +154,19 @@ export async function POST(req: Request) {
                 console.log("📦 Paket Data Matang (Context for AI):", contextForAI);
 
                 // Kirim chatId sebagai identifier sesi memori (Tujuannya agar bot ingat riwayat obrolan user tsb)
-                const aiResponse = await processMerchantMessage(contextForAI, messageText, chatId);
+                const aiResponseResult: any = await processMerchantMessage(contextForAI, messageText, chatId);
+                const aiResponseText = typeof aiResponseResult === 'string' ? aiResponseResult : aiResponseResult.text;
 
-                await sendWhatsAppMessage(chatId, aiResponse);
+                await sendWhatsAppMessage(chatId, aiResponseText);
+                return NextResponse.json({ success: true }, { status: 200 });
             }
         }
 
         // SELALU kembalikan HTTP 200 OK
         return NextResponse.json({ success: true }, { status: 200 });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("❌ Terjadi kesalahan saat memproses payload Telegram:", error);
-        return NextResponse.json({ error: "Terjadi kesalahan sistem." }, { status: 200 });
+        return NextResponse.json({ error: "Terjadi kesalahan sistem.", details: error.message, stack: error.stack }, { status: 500 });
     }
 }
