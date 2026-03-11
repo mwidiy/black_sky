@@ -154,10 +154,18 @@ export async function POST(req: Request) {
                 console.log("📦 Paket Data Matang (Context for AI):", contextForAI);
 
                 // Kirim chatId sebagai identifier sesi memori (Tujuannya agar bot ingat riwayat obrolan user tsb)
-                const aiResponseResult: any = await processMerchantMessage(contextForAI, messageText, chatId);
-                const aiResponseText = typeof aiResponseResult === 'string' ? aiResponseResult : aiResponseResult.text;
+                // JALANKAN DI BACKGROUND SECARA ASYNC (Agar Telegram tidak Timeout dan spam 3x retry)
+                (async () => {
+                    try {
+                        const aiResponseResult: any = await processMerchantMessage(contextForAI, messageText, chatId);
+                        const aiResponseText = typeof aiResponseResult === 'string' ? aiResponseResult : aiResponseResult.text;
+                        await sendWhatsAppMessage(chatId, aiResponseText);
+                    } catch (e) {
+                        console.error("❌ Background AI Process Gagal:", e);
+                    }
+                })();
 
-                await sendWhatsAppMessage(chatId, aiResponseText);
+                // LANGSUNG RETURN 200 OK TANPA MENUNGGU AI SELESAI
                 return NextResponse.json({ success: true }, { status: 200 });
             }
         }

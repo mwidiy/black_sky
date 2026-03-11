@@ -105,11 +105,17 @@ export async function POST(req: Request) {
 
                         console.log("📦 Paket Data Matang (Context for AI):", contextForAI);
 
-                        // TAHAP 3: Kirim contextForAI ini ke AI QuackXel
-                        const aiResponse = await processMerchantMessage(contextForAI, messageText);
-
-                        // TAHAP 4: Kembalikan balasan ke WhatsApp (Mock)
-                        await sendWhatsAppMessage(senderNumber, aiResponse);
+                        // TAHAP 3 & 4: Jalankan Background Process (Async) agar Meta tidak Spam Retry
+                        // Kita tidak meng-await proses ini, melainkan membiarkannya jalan sendiri
+                        (async () => {
+                            try {
+                                const aiResponseResult: any = await processMerchantMessage(contextForAI, messageText, senderNumber);
+                                const aiResponseText = typeof aiResponseResult === 'string' ? aiResponseResult : aiResponseResult.text;
+                                await sendWhatsAppMessage(senderNumber, aiResponseText);
+                            } catch (e) {
+                                console.error("❌ Background AI Process Gagal:", e);
+                            }
+                        })();
                     }
                 }
             }

@@ -1,0 +1,78 @@
+================================================================================
+QUACKXEL HYBRID BOT ARCHITECTURE & INTEGRATION GUIDE
+================================================================================
+VERSI: 2.0 (Hybrid State Machine - AI x Hardcoded Bot)
+STEV (State-Engine-Validation) ARCHITECTURE
+================================================================================
+
+1. RINGKASAN ARSITEKTUR
+--------------------------------------------------------------------------------
+Sistem ini menggunakan arsitektur Hybrid yang memisahkan antara "Otak Analitik" (LLM) dan "Operasi Database" (Hardcoded Regex / State Machine). Tujuannya adalah untuk menekan biaya Token API, menghilangkan delay waktu (latency) akibat pemrosesan AI Swarm, dan menjamin Integritas Data 100% (Anti-Halusinasi / Anti-Typo CRUD).
+
+Teknologi Utama:
+- Node.js (Next.js App Router)
+- Prisma ORM (Database Querying & Relational Integrity)
+- Vercel AI SDK (@ai-sdk/google)
+- Telegram & WhatsApp Webhook API
+
+2. ALUR MASUK WEBHOOK (ENTRY POINT)
+--------------------------------------------------------------------------------
+File: `src/app/api/webhook/{platform}/route.ts`
+
+- FIRE AND FORGET (ASYNC BYPASS): 
+  Platform messaging (khususnya Telegram & Meta) memiliki timeout (biasanya 5 detik). Jika AI membutuhkan waktu 7 detik untuk berpikir, platform akan menganggap gagal dan me-retry pesan yang sama hingga 3x (menyebabkan spam).
+  Solusi: Webhook harus LANGSUNG me-return `HTTP 200 OK` di baris terbawah. Pemrosesan state machine dan pemanggilan AI dari `generate.ts` dieksekusi di dalam Async IIFE (Immediately Invoked Function Expression) yang berjalan di background.
+  
+- OTOENTIKASI & INJEKSI KONTEKS:
+  Sebelum memanggil otak chatbot, Webhook mengambil data store/merchant berdasar `chatId`. Seluruh data operasional ditarik secara Real-time (Active Orders, Catalog Menu, Denah Meja, Omset Hari Ini). Data ini di-compile ke dalam satu JSON besar `contextForAI` lalu dipassing ke fungsi pemroses utama.
+
+3. STATE MACHINE ENGINE (THE BRAIN)
+--------------------------------------------------------------------------------
+File: `src/lib/ai/generate.ts` -> `processMerchantMessage()`
+
+Sistem tidak lagi mengandalkan AI untuk mendeteksi intent eksekusi. Konteks percakapan disimpan dalam Memory `Map<string, ChatSession>` berbasis Session ID (chatId).
+
+State yang tersedia:
+A. `IDLE`
+   - State awal saat user chat. Menampilkan Menu Utama (Opsi 1: AI Chat, Opsi 2: Bot Database).
+   - Segala input yang di luar konteks (atau input "0") akan me-reset pointer kembali ke `IDLE`.
+
+B. `MODE_AI` (Pure Analytical Chat)
+   - Diaktifkan jika user memilih opsi "1".
+   - Sistem memanggil Single-Agent LLM. Prompt system di-inject dengan kumpulan data JSON `contextForAI` dari webhook. 
+   - LLM dilarang (via prompt) merubah data. murni menjawab pertanyaan berdasar konteks (contoh: "Menu apa yang paling laku hari ini?"). Sangat hemat token.
+
+C. `MODE_MENU_DB` (Rigid Routing)
+   - Diaktifkan jika user memilih opsi "2". Menyajikan daftar List CRUD (1-8).
+   - Meminta input berwujud angka pasti.
+
+D. `MODE_PILIH_*` (Absolute Precision Data Selection)
+   - Alur pengeditan/penghapusan TIDAK BOLEH berbasis teks bebas (Fuzzy Match / string.contains) karena rawan salah sasaran (Misal: User ketik "Hapus Nasi", yang terhapus "Nasi Putih", padahal niatnya "Nasi Goreng").
+   - Jika user memilih aksi Edit/Delete, state berubah ke `MODE_PILIH_MENU` / `MODE_PILIH_LOKASI` / `MODE_PILIH_KATEGORI` / `MODE_PILIH_PESANAN`.
+   - Node.js melakukan Query `.findMany()` ke Database, menyajikan list data valid dengan prefix ID Database (`[ID]. [Nama Data]`).
+   - Jawaban user akan di-parse sebagai angka ID dan dilempar ke `session.tempData` untuk dieksekusi di step berikutnya.
+
+E. `MODE_FORM` (Regex Execution)
+   - Bot mengeluarkan Template Form kaku (Contoh: "Menu Baru: \nHarga: ").
+   - User me-reply dengan copy-paste template.
+   - Pemrosesan dilakukan TANPA AI. String dipisah menggunakan `split('\n')` dan `split(':')` untuk mengekstrak Value secara presisi.
+   - Data disalurkan ke fungsi mutasi `prisma.ts` yang dikombinasikan dengan payload `session.tempData` (ID valid dari step D).
+
+4. DATA MUTATION (ATOMIC PRISMA FUNCTIONS)
+--------------------------------------------------------------------------------
+File: `src/lib/db/prisma.ts`
+
+- Setiap operasi Create/Update/Delete dibungkus dalam try-catch yang mengembalikan object: `{ success: boolean, message: string }`.
+- Prioritas Parameter ID: Setiap fungsi Edit/Delete menerima parameter `idOrName`. Pengecekan pertama melakukan `!isNaN(Number(param))` untuk melakukan eksekusi by `id` (Hasil dari `MODE_PILIH_*`).
+- Jika user bypass atau terdapat bug integrasi yang melempar String Text, operasi akan mencoba fallback ke Fuzzy Matching String (`mode: 'insensitive'`) -- Namun ini dianggap sebagai jalur cadangan lapis kedua.
+
+5. CARA IMPLEMENTASI DI PROJECT BARU
+--------------------------------------------------------------------------------
+1. COPY STRUCTURE: Bawa `Session Map` dan konsep State Machine `ChatState`.
+2. DEFINE STATES: Selalu buat diagram alir. Pisahkan antara state "Analisis (AI)" dan "Aksi (Bot)".
+3. WEBHOOK BYPASS: Selalu gunakan Async Background Execution di route webhook agar terhindar dari platform retry limit.
+4. ANTI-TYPO CRUD: Selalu terapkan `MODE_PILIH_*` sebelum update/delete. Manusia akan selalu typo, hindari pencocokan String Text pada Query Update/Delete ke database sebisa mungkin.
+
+================================================================================
+END OF DOCUMENT
+================================================================================

@@ -117,19 +117,30 @@ export async function updateMerchantStatus(merchantId: number, status: 'Buka' | 
 // AI hanya perlu passing String (Bahasa Manusia), Mesin yang cari ID-nya.
 // ==========================================
 
-export async function selesaikanPesananAI(storeId: number, namaPelanggan: string) {
-    if (!namaPelanggan || namaPelanggan.trim() === '') return { success: false, message: 'Nama pelanggan tidak boleh kosong.' };
+export async function selesaikanPesananAI(storeId: number, orderIdOrName: string) {
+    if (!orderIdOrName || orderIdOrName.trim() === '') return { success: false, message: 'ID atau Nama pelanggan tidak boleh kosong.' };
     try {
-        const order = await prisma.order.findFirst({
-            where: {
-                storeId,
-                customerName: { contains: namaPelanggan, mode: 'insensitive' },
-                status: { in: ['Pending', 'Processing'] }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
+        const orderId = Number(orderIdOrName);
+        let order;
 
-        if (!order) return { success: false, message: `Pesanan atas nama '${namaPelanggan}' tidak ditemukan atau sudah selesai/batal.` };
+        if (!isNaN(orderId)) {
+            order = await prisma.order.findFirst({
+                where: { id: orderId, storeId, status: { in: ['Pending', 'Processing'] } }
+            });
+        }
+
+        if (!order) {
+            order = await prisma.order.findFirst({
+                where: {
+                    storeId,
+                    customerName: { contains: orderIdOrName, mode: 'insensitive' },
+                    status: { in: ['Pending', 'Processing'] }
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+        }
+
+        if (!order) return { success: false, message: `Pesanan ID/Nama '${orderIdOrName}' tidak ditemukan atau sudah selesai/batal.` };
 
         await prisma.order.update({
             where: { id: order.id },
@@ -166,16 +177,27 @@ export async function batalkanPesananAI(storeId: number, namaPelanggan: string, 
     }
 }
 
-export async function tambahMenuKantinAI(storeId: number, namaMenu: string, harga: number) {
+export async function tambahMenuKantinAI(storeId: number, namaMenu: string, harga: number, namaKategori: string = 'Umum') {
     if (!namaMenu || namaMenu.trim() === '') return { success: false, message: 'Nama menu tidak boleh kosong.' };
     if (isNaN(Number(harga)) || Number(harga) <= 0) return { success: false, message: 'Harga tidak valid.' };
     try {
-        // Cari kategori pertama milik toko ini sebagai default
-        let category = await prisma.category.findFirst({ where: { storeId }, orderBy: { id: 'asc' } });
-
-        // Buat kategori default kalau belum ada
+        let category;
+        
+        // Cek jika input kategori berupa 'ID' (User milih angka dari List)
+        if (!isNaN(Number(namaKategori))) {
+             category = await prisma.category.findFirst({ where: { id: Number(namaKategori), storeId } });
+        }
+        
+        // Cek berdasarkan persis Namanya jika ID tidak ditemukan
         if (!category) {
-            category = await prisma.category.create({ data: { name: 'Umum', storeId } });
+            category = await prisma.category.findFirst({
+                where: { storeId, name: { equals: namaKategori, mode: 'insensitive' } }
+            });
+        }
+
+        // Kalau belum ketemu juga, otomatis Bikin Kategori Baru!
+        if (!category) {
+            category = await prisma.category.create({ data: { name: namaKategori || 'Umum', storeId } });
         }
 
         await prisma.product.create({
@@ -189,21 +211,46 @@ export async function tambahMenuKantinAI(storeId: number, namaMenu: string, harg
                 image: ''
             }
         });
-        return { success: true, message: `Menu baru '${namaMenu}' seharga Rp${harga} berhasil ditambahkan.` };
+        return { success: true, message: `Menu baru '${namaMenu}' seharga Rp${harga} berhasil ditambahkan ke Kategori '${category.name}'.` };
     } catch (e: any) {
         return { success: false, message: `Gagal menambah menu: ${e.message}` };
     }
 }
 
-export async function ubahHargaMenuAI(storeId: number, namaMenu: string, hargaBaru: number) {
-    if (!namaMenu || namaMenu.trim() === '') return { success: false, message: 'Tolong sebutkan nama menu yang spesifik secara lengkap.' };
+export async function tambahKategoriAI(storeId: number, namaKategori: string) {
+    if (!namaKategori || namaKategori.trim() === '') return { success: false, message: 'Nama kategori tidak boleh kosong.' };
+    try {
+        const existing = await prisma.category.findFirst({
+            where: { storeId, name: { equals: namaKategori, mode: 'insensitive' } }
+        });
+        
+        if (existing) return { success: false, message: `Kategori '${existing.name}' sudah ada di menu Anda.` };
+
+        await prisma.category.create({ data: { name: namaKategori, storeId } });
+        return { success: true, message: `Kategori baru '${namaKategori}' berhasil dibuat.` };
+    } catch (e: any) {
+        return { success: false, message: `Gagal membuat kategori: ${e.message}` };
+    }
+}
+
+export async function ubahHargaMenuAI(storeId: number, menuIdOrName: string, hargaBaru: number) {
+    if (!menuIdOrName || menuIdOrName.trim() === '') return { success: false, message: 'ID atau Nama menu tidak boleh kosong.' };
     if (isNaN(Number(hargaBaru)) || Number(hargaBaru) <= 0) return { success: false, message: 'Harga baru tidak valid atau tidak disebutkan.' };
     try {
-        const product = await prisma.product.findFirst({
-            where: { storeId, name: { contains: namaMenu, mode: 'insensitive' } }
-        });
+        const menuId = Number(menuIdOrName);
+        let product;
 
-        if (!product) return { success: false, message: `Menu mirip kata '${namaMenu}' tidak ditemukan.` };
+        if (!isNaN(menuId)) {
+            product = await prisma.product.findFirst({ where: { id: menuId, storeId } });
+        }
+
+        if (!product) {
+            product = await prisma.product.findFirst({
+                where: { storeId, name: { contains: menuIdOrName, mode: 'insensitive' } }
+            });
+        }
+
+        if (!product) return { success: false, message: `Menu dengan pelacak '${menuIdOrName}' tidak ditemukan.` };
 
         await prisma.product.update({
             where: { id: product.id },
@@ -238,14 +285,23 @@ export async function ubahStatusMenuAI(storeId: number, namaMenu: string, status
     }
 }
 
-export async function hapusMenuAI(storeId: number, namaMenu: string) {
-    if (!namaMenu || namaMenu.trim() === '') return { success: false, message: 'Tolong sebutkan nama menu yang ingin dihapus.' };
+export async function hapusMenuAI(storeId: number, menuIdOrName: string) {
+    if (!menuIdOrName || menuIdOrName.trim() === '') return { success: false, message: 'Tolong sebutkan ID atau nama menu yang ingin dihapus.' };
     try {
-        const product = await prisma.product.findFirst({
-            where: { storeId, name: { contains: namaMenu, mode: 'insensitive' } }
-        });
+        const menuId = Number(menuIdOrName);
+        let product;
 
-        if (!product) return { success: false, message: `Menu mirip kata '${namaMenu}' tidak ditemukan.` };
+        if (!isNaN(menuId)) {
+            product = await prisma.product.findFirst({ where: { id: menuId, storeId } });
+        }
+
+        if (!product) {
+            product = await prisma.product.findFirst({
+                where: { storeId, name: { contains: menuIdOrName, mode: 'insensitive' } }
+            });
+        }
+
+        if (!product) return { success: false, message: `Menu pelacak '${menuIdOrName}' tidak ditemukan.` };
 
         await prisma.product.delete({
             where: { id: product.id }
@@ -256,6 +312,61 @@ export async function hapusMenuAI(storeId: number, namaMenu: string) {
     }
 }
 
+
+export async function tambahLokasiAI(storeId: number, namaLokasi: string) {
+    if (!namaLokasi || namaLokasi.trim() === '') return { success: false, message: 'Nama lokasi (area) tidak boleh kosong.' };
+    try {
+        await prisma.location.create({
+            data: {
+                name: namaLokasi,
+                storeId: storeId
+            }
+        });
+        return { success: true, message: `Lokasi baru '${namaLokasi}' berhasil ditambahkan ke kantin.` };
+    } catch (e: any) {
+        return { success: false, message: `Gagal menambah lokasi: ${e.message}` };
+    }
+}
+
+export async function tambahMejaAI(storeId: number, namaMeja: string, locationIdOrName: string = '') {
+    if (!namaMeja || namaMeja.trim() === '') return { success: false, message: 'Nama/Nomor meja tidak boleh kosong.' };
+    try {
+        let location;
+        const locId = Number(locationIdOrName);
+        
+        // Priority: EXACT Location ID
+        if (!isNaN(locId) && locId !== 0) {
+            location = await prisma.location.findFirst({ where: { id: locId, storeId } });
+        }
+
+        // Fallback: Fuzzy Name Match
+        if (!location && locationIdOrName.trim() !== '') {
+             location = await prisma.location.findFirst({
+                 where: { storeId, name: { contains: locationIdOrName, mode: 'insensitive' } }
+             });
+        }
+
+        // Fallback: Default location or Create one
+        if (!location) {
+             location = await prisma.location.findFirst({ where: { storeId }, orderBy: { id: 'asc' } });
+             if (!location) {
+                 location = await prisma.location.create({ data: { name: 'Area Utama', storeId } });
+             }
+        }
+
+        await prisma.table.create({
+            data: {
+                name: namaMeja,
+                isActive: true,
+                locationId: location.id,
+                qrCode: `qr_${storeId}_${Date.now()}`
+            }
+        });
+        return { success: true, message: `Meja '${namaMeja}' berhasil ditambahkan ke area ${location.name}.` };
+    } catch (e: any) {
+        return { success: false, message: `Gagal menambah meja: ${e.message}` };
+    }
+}
 
 export async function crudTableAI(action: 'create' | 'update' | 'delete', storeId: number, tableId?: number, name?: string, isActive?: boolean) {
     try {
